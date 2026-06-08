@@ -134,6 +134,37 @@ export interface RankEntry {
   rank: number;
 }
 
+export interface ReplayRecord {
+  id: string;
+  gameId: string;
+  title: string;
+  mode: '2v2' | '4v4' | 'free';
+  date: number;
+  duration: number;
+  winner: { name: string; color: string };
+  winnerColor: string;
+  players: { nickname: string; team: string; avatar?: string }[];
+  finalGrid: string;
+  mvp?: { nickname: string; stats: any };
+  playerId: string;
+}
+
+export interface FavoriteArtwork {
+  id: string;
+  gameId: string;
+  title: string;
+  mode: '2v2' | '4v4' | 'free';
+  date: number;
+  duration: number;
+  winner: { name: string; color: string };
+  winnerColor: string;
+  players: { nickname: string; team: string; avatar?: string }[];
+  finalGrid: string;
+  mvp?: { nickname: string; stats: any };
+  favoritedAt: number;
+  playerId: string;
+}
+
 export const TEAM_COLORS = ['#ff2d95', '#00d4ff', '#39ff14', '#ffdd00'];
 export const TEAM_NAMES = ['霓虹粉', '电光蓝', '荧光绿', '金沙黄'];
 

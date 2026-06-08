@@ -8,6 +8,8 @@ import {
   ChatMessage,
   ITEMS,
   PAINT_COLORS,
+  ReplayRecord,
+  FavoriteArtwork,
 } from '../../shared/types';
 
 interface GameStore {
@@ -24,6 +26,8 @@ interface GameStore {
   currentRoomData: any | null;
   gameReplay: any | null;
   blockedPlayers: string[];
+  replayHistory: ReplayRecord[];
+  favoriteArtworks: FavoriteArtwork[];
 
   setCurrentPlayer: (player: Player | null) => void;
   setGameState: (state: GameState | null) => void;
@@ -40,6 +44,11 @@ interface GameStore {
   setGameReplay: (replay: any | null) => void;
   addBlockedPlayer: (playerId: string) => void;
   removeBlockedPlayer: (playerId: string) => void;
+  addReplayHistory: (replay: ReplayRecord) => void;
+  removeReplayHistory: (gameId: string) => void;
+  addFavoriteArtwork: (artwork: Omit<FavoriteArtwork, 'id' | 'favoritedAt'>) => boolean;
+  removeFavoriteArtwork: (gameId: string) => void;
+  isArtworkFavorited: (gameId: string) => boolean;
 
   updateCell: (x: number, y: number, cell: Partial<Cell>) => void;
   updateScore: (teams: Team[]) => void;
@@ -50,6 +59,9 @@ interface GameStore {
 }
 
 const savedGameReplay = localStorage.getItem('gameReplay');
+const savedReplayHistory = localStorage.getItem('replayHistory');
+const savedFavoriteArtworks = localStorage.getItem('favoriteArtworks');
+const savedPlayerId = localStorage.getItem('playerId');
 
 export const useGameStore = create<GameStore>((set, get) => ({
   currentPlayer: null,
@@ -65,6 +77,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   currentRoomData: null,
   gameReplay: savedGameReplay ? JSON.parse(savedGameReplay) : null,
   blockedPlayers: [],
+  replayHistory: savedReplayHistory ? JSON.parse(savedReplayHistory) : [],
+  favoriteArtworks: savedFavoriteArtworks ? JSON.parse(savedFavoriteArtworks) : [],
 
   setCurrentPlayer: (player) => set({ currentPlayer: player }),
   setGameState: (state) => set({ gameState: state }),
@@ -102,6 +116,44 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set((state) => ({
       blockedPlayers: state.blockedPlayers.filter((p) => p !== playerId),
     })),
+  addReplayHistory: (replay) => {
+    const { replayHistory, currentPlayer } = get();
+    if (replayHistory.some((r) => r.gameId === replay.gameId)) return;
+    const newHistory = [replay, ...replayHistory].slice(0, 50);
+    localStorage.setItem('replayHistory', JSON.stringify(newHistory));
+    set({ replayHistory: newHistory });
+  },
+  removeReplayHistory: (gameId) => {
+    const { replayHistory } = get();
+    const newHistory = replayHistory.filter((r) => r.gameId !== gameId);
+    localStorage.setItem('replayHistory', JSON.stringify(newHistory));
+    set({ replayHistory: newHistory });
+  },
+  addFavoriteArtwork: (artwork) => {
+    const { favoriteArtworks, currentPlayer } = get();
+    if (favoriteArtworks.some((a) => a.gameId === artwork.gameId)) {
+      return false;
+    }
+    const newArtwork: FavoriteArtwork = {
+      ...artwork,
+      id: `fav_${Date.now()}`,
+      favoritedAt: Date.now(),
+    };
+    const newFavorites = [newArtwork, ...favoriteArtworks];
+    localStorage.setItem('favoriteArtworks', JSON.stringify(newFavorites));
+    set({ favoriteArtworks: newFavorites });
+    return true;
+  },
+  removeFavoriteArtwork: (gameId) => {
+    const { favoriteArtworks } = get();
+    const newFavorites = favoriteArtworks.filter((a) => a.gameId !== gameId);
+    localStorage.setItem('favoriteArtworks', JSON.stringify(newFavorites));
+    set({ favoriteArtworks: newFavorites });
+  },
+  isArtworkFavorited: (gameId) => {
+    const { favoriteArtworks } = get();
+    return favoriteArtworks.some((a) => a.gameId === gameId);
+  },
 
   updateCell: (x, y, updates) => {
     const { gameState } = get();

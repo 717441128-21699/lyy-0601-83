@@ -186,7 +186,7 @@ function initSocket() {
   });
 
   globalSocket.on('game:ended', (data: any) => {
-    const { gameState, setGameReplay } = useGameStore.getState();
+    const { gameState, setGameReplay, addReplayHistory, currentPlayer } = useGameStore.getState();
     if (gameState) {
       setGameState({ ...gameState, status: 'ended' });
       setGameReplay({
@@ -196,6 +196,26 @@ function initSocket() {
         winner: data.winner,
         mvp: data.mvp,
       });
+
+      const replayRecord = {
+        id: `replay_${gameState.id}`,
+        gameId: gameState.id,
+        title: `比赛 - ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`,
+        mode: gameState.mode,
+        date: Date.now(),
+        duration: gameState.duration,
+        winner: data.winner,
+        winnerColor: data.winner?.color || '#ff2d95',
+        players: gameState.players.map((p: any) => ({
+          nickname: p.nickname,
+          team: gameState.teams?.find((t: any) => t.id === p.teamId)?.name || '未知',
+          avatar: p.avatar,
+        })),
+        finalGrid: data.finalGrid,
+        mvp: data.mvp,
+        playerId: currentPlayer?.id || '',
+      };
+      addReplayHistory(replayRecord);
     }
   });
 

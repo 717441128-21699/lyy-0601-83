@@ -28,7 +28,7 @@ export class GameEngine {
     hostName: string,
     mode: '2v2' | '4v4' | 'free' = '2v2'
   ) {
-    const roomId = uuidv4().substring(0, 6);
+    const roomId = uuidv4().substring(0, 6).toUpperCase();
     const maxPlayers = mode === '2v2' ? 4 : mode === '4v4' ? 8 : 8;
 
     const room = {
@@ -50,12 +50,13 @@ export class GameEngine {
   }
 
   joinRoom(roomId: string, playerId: string) {
-    const room = this.rooms.get(roomId);
+    const normalizedRoomId = roomId.toUpperCase();
+    const room = this.rooms.get(normalizedRoomId);
     if (!room || room.currentPlayers >= room.maxPlayers) return null;
 
     room.players.push(playerId);
     room.currentPlayers++;
-    this.playerRooms.set(playerId, roomId);
+    this.playerRooms.set(playerId, normalizedRoomId);
     return room;
   }
 
@@ -65,10 +66,14 @@ export class GameEngine {
 
     const room = this.rooms.get(roomId);
     if (room) {
+      const wasHost = room.hostId === playerId;
       room.players = room.players.filter((p: string) => p !== playerId);
       room.currentPlayers--;
+      
       if (room.currentPlayers === 0) {
         this.rooms.delete(roomId);
+      } else if (wasHost) {
+        room.hostId = room.players[0];
       }
     }
     this.playerRooms.delete(playerId);
@@ -83,7 +88,7 @@ export class GameEngine {
   }
 
   getRoomById(roomId: string) {
-    return this.rooms.get(roomId);
+    return this.rooms.get(roomId.toUpperCase());
   }
 
   addToMatchQueue(playerId: string) {

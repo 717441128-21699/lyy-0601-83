@@ -49,6 +49,8 @@ interface GameStore {
   resetGame: () => void;
 }
 
+const savedGameReplay = localStorage.getItem('gameReplay');
+
 export const useGameStore = create<GameStore>((set, get) => ({
   currentPlayer: null,
   gameState: null,
@@ -61,7 +63,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   connectionStatus: 'disconnected',
   currentRoom: null,
   currentRoomData: null,
-  gameReplay: null,
+  gameReplay: savedGameReplay ? JSON.parse(savedGameReplay) : null,
   blockedPlayers: [],
 
   setCurrentPlayer: (player) => set({ currentPlayer: player }),
@@ -82,7 +84,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
   setConnectionStatus: (s) => set({ connectionStatus: s }),
   setCurrentRoom: (roomId) => set({ currentRoom: roomId }),
   setCurrentRoomData: (room) => set({ currentRoomData: room }),
-  setGameReplay: (replay) => set({ gameReplay: replay }),
+  setGameReplay: (replay) => {
+    if (replay) {
+      localStorage.setItem('gameReplay', JSON.stringify(replay));
+    } else {
+      localStorage.removeItem('gameReplay');
+    }
+    set({ gameReplay: replay });
+  },
   addBlockedPlayer: (playerId) =>
     set((state) => ({
       blockedPlayers: state.blockedPlayers.includes(playerId)
@@ -148,7 +157,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set({ inventory: newInventory, selectedItem: null });
   },
 
-  resetGame: () =>
+  resetGame: () => {
+    localStorage.removeItem('gameReplay');
     set({
       gameState: null,
       selectedColor: PAINT_COLORS[0],
@@ -158,5 +168,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       currentRoom: null,
       currentRoomData: null,
       isMatching: false,
-    }),
+      gameReplay: null,
+    });
+  },
 }));

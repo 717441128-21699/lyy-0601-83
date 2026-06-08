@@ -89,7 +89,7 @@ export function Chat() {
     if (blockedPlayers.includes(msg.playerId)) return false;
     if (activeTab === 'global') return msg.channel === 'global' || !msg.channel;
     if (activeTab === 'room') return msg.channel === 'room';
-    if (activeTab === 'team') return msg.channel === 'team' || msg.teamId === currentPlayer?.teamId;
+    if (activeTab === 'team') return msg.channel === 'team';
     return true;
   });
 

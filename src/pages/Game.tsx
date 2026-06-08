@@ -767,7 +767,10 @@ export function Game() {
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    {messages.slice(-10).map((msg) => (
+                    {messages
+                      .filter((msg) => msg.channel === chatActiveTab)
+                      .slice(-10)
+                      .map((msg) => (
                       <div key={msg.id} className="text-sm">
                         <span
                           className="font-pixel-body font-bold"

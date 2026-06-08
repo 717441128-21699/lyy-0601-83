@@ -150,13 +150,13 @@ export function setupSockets(io: Server) {
       socket.join(room.id);
       socket.emit('room:created', { room });
       
-      const members = room.players.map((pid: string, index: number) => {
+      const members = room.players.map((pid: string) => {
         const p = getPlayerById(pid) as { id: string; nickname: string; avatar: string } | undefined;
         return {
           id: p?.id || pid,
           nickname: p?.nickname || '未知玩家',
           avatar: p?.avatar || '',
-          isHost: index === 0,
+          isHost: pid === room.hostId,
         };
       });
       socket.emit('room:members', { members });
@@ -170,24 +170,24 @@ export function setupSockets(io: Server) {
 
       const room = gameEngine.joinRoom(data.roomId, socketData.playerId);
       if (room) {
-        socket.join(data.roomId);
+        socket.join(room.id);
         socket.emit('room:joined', { room });
         
-        const members = room.players.map((pid: string, index: number) => {
+        const members = room.players.map((pid: string) => {
           const p = getPlayerById(pid) as { id: string; nickname: string; avatar: string } | undefined;
           return {
             id: p?.id || pid,
             nickname: p?.nickname || '未知玩家',
             avatar: p?.avatar || '',
-            isHost: index === 0,
+            isHost: pid === room.hostId,
           };
         });
         
-        io.to(data.roomId).emit('room:playerJoined', {
+        io.to(room.id).emit('room:playerJoined', {
           playerId: socketData.playerId,
           nickname: socketData.nickname,
         });
-        io.to(data.roomId).emit('room:members', { members });
+        io.to(room.id).emit('room:members', { members });
         io.emit('rooms:update', gameEngine.getRooms());
       } else {
         socket.emit('room:error', { message: '加入房间失败' });
@@ -206,13 +206,13 @@ export function setupSockets(io: Server) {
         
         const room = gameEngine.getRoomById(roomId);
         if (room) {
-          const members = room.players.map((pid: string, index: number) => {
+          const members = room.players.map((pid: string) => {
             const p = getPlayerById(pid) as { id: string; nickname: string; avatar: string } | undefined;
             return {
               id: p?.id || pid,
               nickname: p?.nickname || '未知玩家',
               avatar: p?.avatar || '',
-              isHost: index === 0,
+              isHost: pid === room.hostId,
             };
           });
           io.to(roomId).emit('room:members', { members });
@@ -228,13 +228,13 @@ export function setupSockets(io: Server) {
     socket.on('room:requestMembers', (data: { roomId: string }) => {
       const room = gameEngine.getRoomById(data.roomId);
       if (room) {
-        const members = room.players.map((pid: string, index: number) => {
+        const members = room.players.map((pid: string) => {
           const p = getPlayerById(pid) as { id: string; nickname: string; avatar: string } | undefined;
           return {
             id: p?.id || pid,
             nickname: p?.nickname || '未知玩家',
             avatar: p?.avatar || '',
-            isHost: index === 0,
+            isHost: pid === room.hostId,
           };
         });
         socket.emit('room:members', { members });

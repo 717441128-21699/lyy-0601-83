@@ -19,6 +19,7 @@ export default function App() {
         <Route path="/items" element={<Items />} />
         <Route path="/chat" element={<Chat />} />
         <Route path="/replay" element={<Replay />} />
+        <Route path="/replay/:gameId" element={<Replay />} />
         <Route path="/rank" element={<Rank />} />
       </Routes>
     </Router>

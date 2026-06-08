@@ -72,6 +72,7 @@ export interface ChatMessage {
   type: 'text' | 'emote' | 'system';
   timestamp: number;
   teamId?: string;
+  channel?: 'global' | 'room' | 'team';
 }
 
 export interface ReplayFrame {

@@ -1,46 +1,159 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Users, Zap, Play, Plus, RefreshCw, Lock, Unlock } from 'lucide-react';
+import {
+  Users,
+  Zap,
+  Play,
+  Plus,
+  RefreshCw,
+  Lock,
+  Unlock,
+  Copy,
+  LogOut,
+  Crown,
+  UserPlus,
+  Check,
+} from 'lucide-react';
 import { PixelButton } from '../components/PixelButton';
+import { PixelAvatar } from '../components/PixelAvatar';
 import { Layout } from '../components/Layout';
 import { useSocket } from '../hooks/useSocket';
 import { useGameStore } from '../store/useGameStore';
 import { Room } from '../../shared/types';
-import { formatTime } from '../utils/pixelUtils';
+import { generatePixelAvatar } from '../utils/pixelUtils';
 
 export function Match() {
   const [selectedMode, setSelectedMode] = useState<'2v2' | '4v4' | 'free'>('2v2');
   const [showCreateRoom, setShowCreateRoom] = useState(false);
   const [roomName, setRoomName] = useState('');
   const [joinCode, setJoinCode] = useState('');
+  const [inRoom, setInRoom] = useState(false);
+  const [roomMembers, setRoomMembers] = useState<any[]>([]);
+  const [isHost, setIsHost] = useState(false);
+  const [copied, setCopied] = useState(false);
   const navigate = useNavigate();
   const { emit, on } = useSocket();
-  const { rooms, isMatching, setIsMatching, currentPlayer, setGameState } = useGameStore();
+  const {
+    rooms,
+    isMatching,
+    setIsMatching,
+    currentPlayer,
+    setGameState,
+    currentRoom,
+    setCurrentRoom,
+    setCurrentRoomData,
+  } = useGameStore();
+  const initializedRef = useRef(false);
 
   useEffect(() => {
+    if (initializedRef.current) return;
+    initializedRef.current = true;
+
     emit('rooms:get');
 
     const offMatchFound = on('match:found', (data: any) => {
       setIsMatching(false);
+      setInRoom(true);
+      setCurrentRoom(data.roomId);
     });
 
     const offGameStarted = on('game:started', (data: any) => {
       setGameState(data.gameState);
+      setIsMatching(false);
       navigate('/game');
+    });
+
+    const offRoomCreated = on('room:created', (data: any) => {
+      setInRoom(true);
+      setIsHost(true);
+      setShowCreateRoom(false);
+      setCurrentRoom(data.room.id);
+      setCurrentRoomData(data.room);
+      setRoomMembers([
+        {
+          id: currentPlayer?.id,
+          nickname: currentPlayer?.nickname,
+          avatar: currentPlayer?.avatar,
+          isHost: true,
+        },
+      ]);
+    });
+
+    const offRoomJoined = on('room:joined', (data: any) => {
+      setInRoom(true);
+      setIsHost(data.room.hostId === currentPlayer?.id);
+      setCurrentRoom(data.room.id);
+      setCurrentRoomData(data.room);
+      emit('room:requestMembers', { roomId: data.room.id });
+    });
+
+    const offRoomPlayerJoined = on('room:playerJoined', (data: any) => {
+      setRoomMembers((prev) => [
+        ...prev,
+        {
+          id: data.playerId,
+          nickname: data.nickname,
+          avatar: generatePixelAvatar(data.playerId),
+          isHost: false,
+        },
+      ]);
+    });
+
+    const offRoomPlayerLeft = on('room:playerLeft', (data: any) => {
+      setRoomMembers((prev) => prev.filter((m) => m.id !== data.playerId));
+    });
+
+    const offRoomMembers = on('room:members', (data: any) => {
+      setRoomMembers(data.members);
+      setIsHost(data.members[0]?.id === currentPlayer?.id);
+    });
+
+    const offRoomError = on('room:error', (data: any) => {
+      alert(data.message);
+      setInRoom(false);
+      setCurrentRoom(null);
+      setCurrentRoomData(null);
     });
 
     return () => {
       offMatchFound();
       offGameStarted();
+      offRoomCreated();
+      offRoomJoined();
+      offRoomPlayerJoined();
+      offRoomPlayerLeft();
+      offRoomMembers();
+      offRoomError();
     };
-  }, [emit, on, setIsMatching, setGameState, navigate]);
+  }, [
+    emit,
+    on,
+    setIsMatching,
+    setGameState,
+    navigate,
+    setCurrentRoom,
+    setCurrentRoomData,
+    currentPlayer,
+  ]);
 
   useEffect(() => {
     if (!currentPlayer) {
       navigate('/');
     }
   }, [currentPlayer, navigate]);
+
+  useEffect(() => {
+    if (currentRoom && !inRoom) {
+      const room = rooms.find((r) => r.id === currentRoom);
+      if (room) {
+        setInRoom(true);
+        setIsHost(room.hostId === currentPlayer?.id);
+        setCurrentRoomData(room);
+        emit('room:requestMembers', { roomId: currentRoom });
+      }
+    }
+  }, [currentRoom, rooms, inRoom, currentPlayer, emit, setCurrentRoomData]);
 
   const startMatch = () => {
     setIsMatching(true);
@@ -53,10 +166,11 @@ export function Match() {
   };
 
   const createRoom = () => {
-    if (!roomName) return;
+    if (!roomName.trim()) {
+      alert('请输入房间名称');
+      return;
+    }
     emit('room:create', { mode: selectedMode });
-    setShowCreateRoom(false);
-    setRoomName('');
   };
 
   const joinRoom = (roomId: string) => {
@@ -67,6 +181,33 @@ export function Match() {
     if (joinCode.length === 6) {
       emit('room:join', { roomId: joinCode.toUpperCase() });
     }
+  };
+
+  const leaveRoom = () => {
+    emit('room:leave');
+    setInRoom(false);
+    setCurrentRoom(null);
+    setCurrentRoomData(null);
+    setRoomMembers([]);
+    setIsHost(false);
+    emit('rooms:get');
+  };
+
+  const startGame = () => {
+    if (!currentRoom) return;
+    emit('game:start', { roomId: currentRoom, mode: selectedMode });
+  };
+
+  const copyRoomCode = () => {
+    if (currentRoom) {
+      navigator.clipboard.writeText(currentRoom);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const refreshRooms = () => {
+    emit('rooms:get');
   };
 
   const modeOptions = [
@@ -123,6 +264,136 @@ export function Match() {
     );
   }
 
+  if (inRoom && currentRoom) {
+    return (
+      <Layout>
+        <div className="container mx-auto px-4 py-6">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="max-w-2xl mx-auto"
+          >
+            <div className="pixel-card">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="font-pixel text-xl neon-text-blue">房间详情</h2>
+                <button
+                  onClick={leaveRoom}
+                  className="flex items-center gap-2 text-pixel-red hover:text-pixel-orange transition-colors"
+                >
+                  <LogOut size={18} />
+                  <span className="font-pixel-body text-sm">离开房间</span>
+                </button>
+              </div>
+
+              <div className="bg-pixel-purple/50 border-4 border-pixel-blue/50 p-6 mb-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <div className="font-pixel text-sm text-gray-500 mb-1">房间号</div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-pixel text-2xl text-pixel-blue tracking-widest">
+                        {currentRoom}
+                      </span>
+                      <button
+                        onClick={copyRoomCode}
+                        className="p-2 hover:bg-pixel-blue/20 rounded transition-colors"
+                      >
+                        {copied ? (
+                          <Check size={18} className="text-pixel-green" />
+                        ) : (
+                          <Copy size={18} className="text-pixel-blue" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-pixel text-sm text-gray-500 mb-1">游戏模式</div>
+                    <span className="font-pixel text-lg text-pixel-pink">{selectedMode}</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Users size={18} className="text-pixel-green" />
+                  <span className="font-pixel-body text-sm text-pixel-green">
+                    {roomMembers.length} / {selectedMode === '2v2' ? 4 : 8} 玩家
+                  </span>
+                </div>
+              </div>
+
+              <div className="mb-6">
+                <h3 className="font-pixel text-sm text-pixel-yellow mb-4 flex items-center gap-2">
+                  <UserPlus size={16} />
+                  玩家列表
+                </h3>
+                <div className="space-y-3">
+                  {roomMembers.map((member, index) => (
+                    <motion.div
+                      key={member.id}
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: index * 0.05 }}
+                      className="flex items-center justify-between p-4 bg-pixel-bg border-2 border-pixel-blue/30"
+                    >
+                      <div className="flex items-center gap-3">
+                        <PixelAvatar src={member.avatar} size={40} online />
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-pixel-body text-white">{member.nickname}</span>
+                            {member.isHost && (
+                              <Crown size={14} className="text-pixel-yellow" />
+                            )}
+                          </div>
+                          <div className="font-pixel-body text-xs text-gray-500">
+                            {member.isHost ? '房主' : '玩家'}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <span className="font-pixel text-xs text-pixel-green">已就绪</span>
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
+              </div>
+
+              {roomMembers.length < (selectedMode === '2v2' ? 4 : 8) && (
+                <div className="bg-pixel-blue/10 border-2 border-pixel-blue/30 p-4 mb-6 text-center">
+                  <p className="font-pixel-body text-sm text-pixel-blue mb-2">
+                    等待其他玩家加入...
+                  </p>
+                  <p className="font-pixel-body text-xs text-gray-500">
+                    分享房间号 <span className="text-pixel-pink">{currentRoom}</span> 邀请好友
+                  </p>
+                </div>
+              )}
+
+              {isHost && (
+                <PixelButton
+                  variant="success"
+                  className="w-full"
+                  onClick={startGame}
+                  disabled={roomMembers.length < 2}
+                >
+                  <div className="flex items-center justify-center gap-2">
+                    <Play size={18} />
+                    <span>开始游戏</span>
+                  </div>
+                </PixelButton>
+              )}
+
+              {!isHost && (
+                <div className="text-center py-4">
+                  <p className="font-pixel-body text-sm text-gray-500">
+                    等待房主开始游戏...
+                  </p>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        </div>
+      </Layout>
+    );
+  }
+
   return (
     <Layout>
       <div className="container mx-auto px-4 py-6">
@@ -164,7 +435,7 @@ export function Match() {
               <div className="flex items-center justify-between mb-4">
                 <h2 className="font-pixel text-lg neon-text-pink">房间列表</h2>
                 <button
-                  onClick={() => emit('rooms:get')}
+                  onClick={refreshRooms}
                   className="text-pixel-blue hover:text-pixel-pink transition-colors"
                 >
                   <RefreshCw size={20} />

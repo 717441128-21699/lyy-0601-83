@@ -4,8 +4,19 @@ import { useGameStore } from '../store/useGameStore';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3001';
 
-export function useSocket() {
-  const socketRef = useRef<Socket | null>(null);
+let globalSocket: Socket | null = null;
+let globalListeners: Map<string, Set<Function>> = new Map();
+
+function initSocket() {
+  if (globalSocket?.connected) return globalSocket;
+
+  globalSocket = io(SOCKET_URL, {
+    transports: ['websocket', 'polling'],
+    reconnection: true,
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 5000,
+  });
+
   const {
     setConnectionStatus,
     setCurrentPlayer,
@@ -18,190 +29,230 @@ export function useSocket() {
     setRooms,
     setIsMatching,
     useItem,
-    resetGame,
-  } = useGameStore();
+    setCurrentRoom,
+    addBlockedPlayer,
+  } = useGameStore.getState();
 
-  const connect = useCallback(() => {
-    if (socketRef.current?.connected) return;
+  globalSocket.on('connect', () => {
+    setConnectionStatus('connected');
+    const playerId = localStorage.getItem('playerId');
+    if (playerId) {
+      globalSocket?.emit('auth:reconnect', { playerId });
+    }
+  });
 
-    setConnectionStatus('connecting');
-    socketRef.current = io(SOCKET_URL, {
-      transports: ['websocket', 'polling'],
-    });
+  globalSocket.on('disconnect', () => {
+    setConnectionStatus('disconnected');
+  });
 
-    const socket = socketRef.current;
+  globalSocket.on('auth:success', (data: any) => {
+    setCurrentPlayer(data.player);
+    localStorage.setItem('playerId', data.player.id);
+  });
 
-    socket.on('connect', () => {
-      setConnectionStatus('connected');
-    });
+  globalSocket.on('match:waiting', () => {
+    setIsMatching(true);
+  });
 
-    socket.on('disconnect', () => {
-      setConnectionStatus('disconnected');
-    });
+  globalSocket.on('match:found', (data: any) => {
+    setIsMatching(false);
+    setCurrentRoom(data.roomId);
+  });
 
-    socket.on('auth:success', (data: any) => {
-      setCurrentPlayer(data.player);
-      localStorage.setItem('playerId', data.player.id);
-    });
+  globalSocket.on('match:cancel', () => {
+    setIsMatching(false);
+  });
 
-    socket.on('match:waiting', () => {
-      setIsMatching(true);
-    });
+  globalSocket.on('rooms:list', (data: any) => {
+    setRooms(data);
+  });
 
-    socket.on('match:found', () => {
-      setIsMatching(false);
-    });
+  globalSocket.on('rooms:update', (data: any) => {
+    setRooms(data);
+  });
 
-    socket.on('match:cancel', () => {
-      setIsMatching(false);
-    });
+  globalSocket.on('room:created', (data: any) => {
+    setCurrentRoom(data.room.id);
+    setRooms(useGameStore.getState().rooms);
+  });
 
-    socket.on('rooms:list', (data: any) => {
-      setRooms(data);
-    });
+  globalSocket.on('room:joined', (data: any) => {
+    setCurrentRoom(data.room.id);
+  });
 
-    socket.on('rooms:update', (data: any) => {
-      setRooms(data);
-    });
+  globalSocket.on('room:playerJoined', (data: any) => {
+    const { gameState } = useGameStore.getState();
+    if (gameState) {
+      const newPlayer: any = {
+        id: data.playerId,
+        nickname: data.nickname,
+        avatar: '',
+        teamId: null,
+        role: 'attacker',
+        isOnline: true,
+        stats: { paints: 0, areasCaptured: 0, itemsUsed: 0 },
+        effects: [],
+      };
+      setGameState({
+        ...gameState,
+        players: [...gameState.players, newPlayer],
+      });
+    }
+  });
 
-    socket.on('game:started', (data: any) => {
-      setGameState(data.gameState);
-    });
+  globalSocket.on('room:playerLeft', (data: any) => {
+    removePlayer(data.playerId);
+  });
 
-    socket.on('cell:update', (data: any) => {
-      updateCell(data.x, data.y, data);
-    });
+  globalSocket.on('game:started', (data: any) => {
+    setGameState(data.gameState);
+    setIsMatching(false);
+  });
 
-    socket.on('area:capture', (data: any) => {
-      const { gameState } = useGameStore.getState();
-      if (gameState) {
-        setGameState({
-          ...gameState,
-          capturedAreas: [...gameState.capturedAreas, ...data.areas],
+  globalSocket.on('cell:update', (data: any) => {
+    updateCell(data.x, data.y, data);
+  });
+
+  globalSocket.on('area:capture', (data: any) => {
+    const { gameState } = useGameStore.getState();
+    if (gameState) {
+      setGameState({
+        ...gameState,
+        capturedAreas: [...gameState.capturedAreas, ...data.areas],
+      });
+    }
+  });
+
+  globalSocket.on('score:update', (data: any) => {
+    updateScore(data.teams);
+    const { gameState } = useGameStore.getState();
+    if (gameState) {
+      setGameState({ ...gameState, timeLeft: data.timeLeft });
+    }
+  });
+
+  globalSocket.on('item:effect', (data: any) => {
+    const { currentPlayer } = useGameStore.getState();
+    if (currentPlayer && data.playerId === currentPlayer.id) {
+      useItem(data.itemId, data.playerId);
+    }
+    if (data.effect?.type === 'speedBoost') {
+      if (currentPlayer && data.playerId === currentPlayer.id) {
+        updatePlayer(currentPlayer.id, {
+          effects: [
+            ...currentPlayer.effects,
+            {
+              type: 'speedBoost',
+              duration: data.effect.duration,
+              startTime: Date.now(),
+            },
+          ],
         });
       }
-    });
-
-    socket.on('score:update', (data: any) => {
-      updateScore(data.teams);
-      const { gameState } = useGameStore.getState();
-      if (gameState) {
-        setGameState({ ...gameState, timeLeft: data.timeLeft });
+    }
+    if (data.effect?.type === 'shield') {
+      if (currentPlayer && data.playerId === currentPlayer.id) {
+        updatePlayer(currentPlayer.id, {
+          effects: [
+            ...currentPlayer.effects,
+            {
+              type: 'shield',
+              duration: data.effect.duration,
+              startTime: Date.now(),
+            },
+          ],
+        });
       }
-    });
+    }
+  });
 
-    socket.on('item:effect', (data: any) => {
-      useItem(data.itemId);
-      if (data.effect?.type === 'speedBoost') {
-        const { currentPlayer } = useGameStore.getState();
-        if (currentPlayer && data.playerId === currentPlayer.id) {
-          updatePlayer(currentPlayer.id, {
-            effects: [
-              ...currentPlayer.effects,
-              {
-                type: 'speedBoost',
-                duration: data.effect.duration,
-                startTime: Date.now(),
-              },
-            ],
-          });
-        }
-      }
-      if (data.effect?.type === 'shield') {
-        const { currentPlayer } = useGameStore.getState();
-        if (currentPlayer && data.playerId === currentPlayer.id) {
-          updatePlayer(currentPlayer.id, {
-            effects: [
-              ...currentPlayer.effects,
-              {
-                type: 'shield',
-                duration: data.effect.duration,
-                startTime: Date.now(),
-              },
-            ],
-          });
-        }
-      }
-    });
-
-    socket.on('chat:receive', (data: any) => {
+  globalSocket.on('chat:receive', (data: any) => {
+    const { blockedPlayers } = useGameStore.getState();
+    if (!blockedPlayers.includes(data.playerId)) {
       addMessage(data);
-    });
+    }
+  });
 
-    socket.on('player:updated', (data: any) => {
-      updatePlayer(data.playerId, data);
-    });
+  globalSocket.on('player:updated', (data: any) => {
+    updatePlayer(data.playerId, data);
+  });
 
-    socket.on('player:disconnect', (data: any) => {
-      removePlayer(data.playerId);
-    });
+  globalSocket.on('player:disconnect', (data: any) => {
+    removePlayer(data.playerId);
+  });
 
-    socket.on('player:reconnected', () => {
-    });
+  globalSocket.on('player:reconnected', (data: any) => {
+    setCurrentRoom(data.roomId);
+  });
 
-    socket.on('game:ended', (data: any) => {
-      const { gameState } = useGameStore.getState();
-      if (gameState) {
-        setGameState({ ...gameState, status: 'ended' });
-      }
-    });
+  globalSocket.on('game:ended', (data: any) => {
+    const { gameState, setGameReplay } = useGameStore.getState();
+    if (gameState) {
+      setGameState({ ...gameState, status: 'ended' });
+      setGameReplay({
+        gameId: gameState.id,
+        replayId: data.replayId,
+        finalGrid: data.finalGrid,
+        winner: data.winner,
+        mvp: data.mvp,
+      });
+    }
+  });
 
-    socket.on('connect_error', () => {
-      setConnectionStatus('disconnected');
-    });
+  globalSocket.on('player:blocked', (data: any) => {
+    addBlockedPlayer(data.blockedPlayerId);
+  });
 
-    return socket;
-  }, [
-    setConnectionStatus,
-    setCurrentPlayer,
-    setGameState,
-    updateCell,
-    updateScore,
-    updatePlayer,
-    removePlayer,
-    addMessage,
-    setRooms,
-    setIsMatching,
-    useItem,
-  ]);
+  globalSocket.on('connect_error', () => {
+    setConnectionStatus('disconnected');
+  });
+
+  return globalSocket;
+}
+
+export function useSocket() {
+  const socketRef = useRef<Socket | null>(null);
+  const { connectionStatus, setConnectionStatus } = useGameStore();
+
+  useEffect(() => {
+    socketRef.current = initSocket();
+
+    return () => {
+    };
+  }, []);
+
+  const connect = useCallback(() => {
+    socketRef.current = initSocket();
+    return socketRef.current;
+  }, []);
 
   const disconnect = useCallback(() => {
-    if (socketRef.current) {
-      socketRef.current.disconnect();
-      socketRef.current = null;
-      setConnectionStatus('disconnected');
-    }
-  }, [setConnectionStatus]);
+  }, []);
 
   const emit = useCallback((event: string, data?: any) => {
-    if (socketRef.current?.connected) {
-      socketRef.current.emit(event, data);
+    if (globalSocket?.connected) {
+      globalSocket.emit(event, data);
     }
   }, []);
 
   const on = useCallback((event: string, callback: (...args: any[]) => void) => {
-    if (socketRef.current) {
-      socketRef.current.on(event, callback);
+    if (globalSocket) {
+      globalSocket.on(event, callback);
     }
     return () => {
-      if (socketRef.current) {
-        socketRef.current.off(event, callback);
+      if (globalSocket) {
+        globalSocket.off(event, callback);
       }
     };
   }, []);
 
-  useEffect(() => {
-    return () => {
-      disconnect();
-    };
-  }, [disconnect]);
-
   return {
-    socket: socketRef.current,
+    socket: globalSocket,
     connect,
     disconnect,
     emit,
     on,
-    isConnected: socketRef.current?.connected || false,
+    isConnected: globalSocket?.connected || false,
+    connectionStatus,
   };
 }

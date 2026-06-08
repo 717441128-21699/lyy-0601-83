@@ -26,7 +26,7 @@ export function Chat() {
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
-  const { currentPlayer, messages, addMessage } = useGameStore();
+  const { currentPlayer, messages, addMessage, blockedPlayers, removeBlockedPlayer } = useGameStore();
   const { emit, on } = useSocket();
 
   useEffect(() => {
@@ -54,7 +54,7 @@ export function Chat() {
     emit('chat:send', {
       message,
       type: 'text',
-      roomId: activeTab === 'global' ? undefined : currentPlayer?.teamId,
+      channel: activeTab,
     });
     setMessage('');
   };
@@ -63,7 +63,7 @@ export function Chat() {
     emit('chat:send', {
       message: emote,
       type: 'emote',
-      roomId: activeTab === 'global' ? undefined : currentPlayer?.teamId,
+      channel: activeTab,
     });
     setShowEmotes(false);
   };
@@ -85,8 +85,11 @@ export function Chat() {
   ];
 
   const filteredMessages = messages.filter((msg) => {
-    if (activeTab === 'global') return !msg.teamId;
-    if (activeTab === 'team') return msg.teamId === currentPlayer?.teamId;
+    if (msg.type === 'system') return true;
+    if (blockedPlayers.includes(msg.playerId)) return false;
+    if (activeTab === 'global') return msg.channel === 'global' || !msg.channel;
+    if (activeTab === 'room') return msg.channel === 'room';
+    if (activeTab === 'team') return msg.channel === 'team' || msg.teamId === currentPlayer?.teamId;
     return true;
   });
 
@@ -343,10 +346,38 @@ export function Chat() {
               <p className="font-pixel-body text-xs text-gray-500 mb-3">
                 被屏蔽的玩家消息将不会显示
               </p>
-              <div className="flex items-center gap-2">
-                <UserX size={16} className="text-gray-600" />
-                <span className="font-pixel-body text-xs text-gray-600">暂无屏蔽</span>
-              </div>
+              {blockedPlayers.length === 0 ? (
+                <div className="flex items-center gap-2">
+                  <UserX size={16} className="text-gray-600" />
+                  <span className="font-pixel-body text-xs text-gray-600">暂无屏蔽</span>
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-40 overflow-y-auto">
+                  {blockedPlayers.map((playerId) => (
+                    <div
+                      key={playerId}
+                      className="flex items-center justify-between p-2 bg-pixel-bg/50 border border-pixel-pink/30"
+                    >
+                      <div className="flex items-center gap-2">
+                        <PixelAvatar
+                          src={`data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjI0IiBoZWlnaHQ9IjI0IiBmaWxsPSIjMWEwYTJlIi8+PHJlY3QgeD0iNiIgeT0iNiIgd2lkdGg9IjEyIiBoZWlnaHQ9IjEyIiBmaWxsPSIjZmYyZDk1Ii8+PC9zdmc+`}
+                          size={24}
+                        />
+                        <span className="font-pixel-body text-xs text-gray-400 truncate max-w-[100px]">
+                          玩家 {playerId.substring(0, 6)}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => removeBlockedPlayer(playerId)}
+                        className="text-pixel-blue hover:text-pixel-green transition-colors"
+                        title="取消屏蔽"
+                      >
+                        <UserX size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>

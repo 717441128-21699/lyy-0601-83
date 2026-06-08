@@ -78,6 +78,14 @@ export class GameEngine {
     return Array.from(this.rooms.values());
   }
 
+  getPlayerRoomId(playerId: string): string | undefined {
+    return this.playerRooms.get(playerId);
+  }
+
+  getRoomById(roomId: string) {
+    return this.rooms.get(roomId);
+  }
+
   addToMatchQueue(playerId: string) {
     if (!this.matchingQueue.includes(playerId)) {
       this.matchingQueue.push(playerId);
@@ -351,10 +359,6 @@ export class GameEngine {
       replayId: game.id,
       finalGrid: JSON.stringify(game.grid),
     };
-  }
-
-  getPlayerRoomId(playerId: string) {
-    return this.playerRooms.get(playerId);
   }
 
   updateTimeLeft(gameId: string, timeLeft: number) {

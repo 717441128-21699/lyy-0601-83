@@ -71,12 +71,61 @@ export function setupSockets(io: Server) {
       const result = gameEngine.addToMatchQueue(socketData.playerId);
       if (result) {
         const { roomId, players } = result;
+        const room = gameEngine.getRoomById(roomId);
+        if (!room) return;
+
+        const gamePlayers: Player[] = players.map((pid) => {
+          const p = getPlayerById(pid) as { id: string; nickname: string; avatar: string } | undefined;
+          return {
+            id: p?.id || pid,
+            nickname: p?.nickname || '未知玩家',
+            avatar: p?.avatar || '',
+            teamId: null,
+            role: 'attacker',
+            isOnline: true,
+            stats: { paints: 0, areasCaptured: 0, itemsUsed: 0 },
+            effects: [],
+          };
+        });
+
+        const gameState = gameEngine.startGame(roomId, gamePlayers, '2v2');
+        socketData.gameId = gameState.id;
+
+        room.status = 'playing';
+
         players.forEach((pid) => {
           const s = playerSockets.get(pid);
+          const sd = s ? socketPlayers.get(s.id) : null;
+          if (sd) sd.gameId = gameState.id;
           if (s) {
+            s.join(gameState.id);
             s.emit('match:found', { roomId, players });
+            s.emit('game:started', { gameState });
           }
         });
+
+        io.emit('rooms:update', gameEngine.getRooms());
+
+        const timer = setInterval(() => {
+          const game = gameEngine.getGame(gameState.id);
+          if (!game) {
+            clearInterval(timer);
+            return;
+          }
+
+          game.timeLeft--;
+          io.to(gameState.id).emit('score:update', {
+            teams: game.teams,
+            timeLeft: game.timeLeft,
+          });
+
+          if (game.timeLeft <= 0) {
+            clearInterval(timer);
+            endGame(gameState.id, roomId, room.mode);
+          }
+        }, 1000);
+
+        gameTimers.set(gameState.id, timer);
       } else {
         socket.emit('match:waiting', { position: gameEngine['matchingQueue'].length });
       }
@@ -133,6 +182,22 @@ export function setupSockets(io: Server) {
 
     socket.on('rooms:get', () => {
       socket.emit('rooms:list', gameEngine.getRooms());
+    });
+
+    socket.on('room:requestMembers', (data: { roomId: string }) => {
+      const room = gameEngine.getRoomById(data.roomId);
+      if (room) {
+        const members = room.players.map((pid: string, index: number) => {
+          const p = getPlayerById(pid) as { id: string; nickname: string; avatar: string } | undefined;
+          return {
+            id: p?.id || pid,
+            nickname: p?.nickname || '未知玩家',
+            avatar: p?.avatar || '',
+            isHost: index === 0,
+          };
+        });
+        socket.emit('room:members', { members });
+      }
     });
 
     socket.on('game:start', (data: { roomId: string; mode: '2v2' | '4v4' | 'free' }) => {
@@ -291,9 +356,22 @@ export function setupSockets(io: Server) {
       }
     });
 
-    socket.on('chat:send', (data: { message: string; type: 'text' | 'emote'; roomId: string }) => {
+    socket.on('chat:send', (data: { message: string; type: 'text' | 'emote'; channel: 'global' | 'room' | 'team' }) => {
       const socketData = socketPlayers.get(socket.id);
       if (!socketData) return;
+
+      const gameId = socketData.gameId;
+      let teamId: string | null = null;
+
+      if (gameId) {
+        const game = gameEngine.getGame(gameId);
+        if (game) {
+          const player = game.players.find((p) => p.id === socketData.playerId);
+          if (player) {
+            teamId = player.teamId;
+          }
+        }
+      }
 
       const msg: ChatMessage = {
         id: uuidv4(),
@@ -302,14 +380,30 @@ export function setupSockets(io: Server) {
         content: data.message,
         type: data.type,
         timestamp: Date.now(),
+        teamId: teamId,
+        channel: data.channel,
       };
 
-      const gameId = socketData.gameId;
-      if (gameId) {
-        gameEngine.addChatMessage(gameId, msg);
-        io.to(gameId).emit('chat:receive', msg);
-      } else if (data.roomId) {
-        io.to(data.roomId).emit('chat:receive', msg);
+      if (data.channel === 'global') {
+        io.emit('chat:receive', msg);
+      } else if (data.channel === 'room') {
+        if (gameId) {
+          gameEngine.addChatMessage(gameId, msg);
+          io.to(gameId).emit('chat:receive', msg);
+        }
+      } else if (data.channel === 'team') {
+        if (gameId && teamId) {
+          const game = gameEngine.getGame(gameId);
+          if (game) {
+            const teamPlayers = game.players.filter((p) => p.teamId === teamId);
+            teamPlayers.forEach((p) => {
+              const s = playerSockets.get(p.id);
+              if (s) {
+                s.emit('chat:receive', msg);
+              }
+            });
+          }
+        }
       }
     });
 
@@ -343,6 +437,7 @@ export function setupSockets(io: Server) {
       const socketData = socketPlayers.get(socket.id);
       if (!socketData) return;
       addBlockedPlayer(socketData.playerId, data.blockedPlayerId);
+      socket.emit('player:blocked', { blockedPlayerId: data.blockedPlayerId });
     });
 
     socket.on('rankings:get', () => {

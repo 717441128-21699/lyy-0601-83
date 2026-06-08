@@ -20,6 +20,10 @@ interface GameStore {
   rooms: any[];
   isMatching: boolean;
   connectionStatus: 'connected' | 'disconnected' | 'connecting';
+  currentRoom: string | null;
+  currentRoomData: any | null;
+  gameReplay: any | null;
+  blockedPlayers: string[];
 
   setCurrentPlayer: (player: Player | null) => void;
   setGameState: (state: GameState | null) => void;
@@ -31,12 +35,17 @@ interface GameStore {
   setRooms: (rooms: any[]) => void;
   setIsMatching: (v: boolean) => void;
   setConnectionStatus: (s: 'connected' | 'disconnected' | 'connecting') => void;
+  setCurrentRoom: (roomId: string | null) => void;
+  setCurrentRoomData: (room: any | null) => void;
+  setGameReplay: (replay: any | null) => void;
+  addBlockedPlayer: (playerId: string) => void;
+  removeBlockedPlayer: (playerId: string) => void;
 
   updateCell: (x: number, y: number, cell: Partial<Cell>) => void;
   updateScore: (teams: Team[]) => void;
   updatePlayer: (playerId: string, updates: Partial<Player>) => void;
   removePlayer: (playerId: string) => void;
-  useItem: (itemId: string) => void;
+  useItem: (itemId: string, playerId?: string) => void;
   resetGame: () => void;
 }
 
@@ -50,6 +59,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
   rooms: [],
   isMatching: false,
   connectionStatus: 'disconnected',
+  currentRoom: null,
+  currentRoomData: null,
+  gameReplay: null,
+  blockedPlayers: [],
 
   setCurrentPlayer: (player) => set({ currentPlayer: player }),
   setGameState: (state) => set({ gameState: state }),
@@ -57,16 +70,29 @@ export const useGameStore = create<GameStore>((set, get) => ({
   setSelectedItem: (item) => set({ selectedItem: item }),
   setInventory: (items) => set({ inventory: items }),
   addMessage: (msg) =>
-    set((state) => ({ messages: [...state.messages.slice(-50), msg] })),
+    set((state) => ({ messages: [...state.messages.slice(-100), msg] })),
   clearMessages: () => set({ messages: [] }),
   setRooms: (rooms) => set({ rooms }),
   setIsMatching: (v) => set({ isMatching: v }),
   setConnectionStatus: (s) => set({ connectionStatus: s }),
+  setCurrentRoom: (roomId) => set({ currentRoom: roomId }),
+  setCurrentRoomData: (room) => set({ currentRoomData: room }),
+  setGameReplay: (replay) => set({ gameReplay: replay }),
+  addBlockedPlayer: (playerId) =>
+    set((state) => ({
+      blockedPlayers: state.blockedPlayers.includes(playerId)
+        ? state.blockedPlayers
+        : [...state.blockedPlayers, playerId],
+    })),
+  removeBlockedPlayer: (playerId) =>
+    set((state) => ({
+      blockedPlayers: state.blockedPlayers.filter((p) => p !== playerId),
+    })),
 
   updateCell: (x, y, updates) => {
     const { gameState } = get();
     if (!gameState) return;
-    const newGrid = [...gameState.grid];
+    const newGrid = gameState.grid.map(row => [...row]);
     newGrid[y] = [...newGrid[y]];
     newGrid[y][x] = { ...newGrid[y][x], ...updates };
     set({ gameState: { ...gameState, grid: newGrid } });
@@ -104,8 +130,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
     });
   },
 
-  useItem: (itemId) => {
-    const { inventory } = get();
+  useItem: (itemId, playerId) => {
+    const { inventory, currentPlayer } = get();
+    if (playerId && currentPlayer?.id !== playerId) {
+      return;
+    }
     const newInventory = inventory.map((item) =>
       item.id === itemId
         ? { ...item, count: Math.max(0, item.count - 1), lastUsed: Date.now() }
@@ -121,5 +150,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       selectedItem: null,
       inventory: JSON.parse(JSON.stringify(ITEMS)),
       messages: [],
+      currentRoom: null,
+      currentRoomData: null,
+      isMatching: false,
     }),
 }));

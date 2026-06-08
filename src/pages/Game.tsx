@@ -267,7 +267,6 @@ export function Game() {
       setTargetingMode(item.id);
     } else {
       emit('item:use', { itemId: item.id });
-      useItem(item.id);
       setSelectedItem(null);
     }
   };

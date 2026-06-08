@@ -120,7 +120,15 @@ export function Replay() {
       setShowFinalWork(true);
 
       if (gameReplay.finalGrid) {
-        setMockGrid(gameReplay.finalGrid);
+        try {
+          const parsedGrid = typeof gameReplay.finalGrid === 'string'
+            ? JSON.parse(gameReplay.finalGrid)
+            : gameReplay.finalGrid;
+          setMockGrid(parsedGrid);
+        } catch (e) {
+          console.error('Failed to parse finalGrid:', e);
+          initEmptyGrid();
+        }
       } else {
         initEmptyGrid();
       }
@@ -268,7 +276,14 @@ export function Replay() {
 
   const showFinalWorkView = () => {
     if (gameReplay?.finalGrid) {
-      setMockGrid(gameReplay.finalGrid);
+      try {
+        const parsedGrid = typeof gameReplay.finalGrid === 'string'
+          ? JSON.parse(gameReplay.finalGrid)
+          : gameReplay.finalGrid;
+        setMockGrid(parsedGrid);
+      } catch (e) {
+        console.error('Failed to parse finalGrid:', e);
+      }
     }
     setShowFinalWork(true);
     setIsPlaying(false);
@@ -360,7 +375,14 @@ export function Replay() {
                     onClick={() => {
                       setShowFinalWork(true);
                       if (gameReplay.finalGrid) {
-                        setMockGrid(gameReplay.finalGrid);
+                        try {
+                          const parsedGrid = typeof gameReplay.finalGrid === 'string'
+                            ? JSON.parse(gameReplay.finalGrid)
+                            : gameReplay.finalGrid;
+                          setMockGrid(parsedGrid);
+                        } catch (e) {
+                          console.error('Failed to parse finalGrid:', e);
+                        }
                       }
                     }}
                     className="p-4 cursor-pointer border-4 border-pixel-yellow bg-pixel-yellow/10"

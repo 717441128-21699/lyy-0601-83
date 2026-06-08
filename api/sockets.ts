@@ -147,7 +147,20 @@ export function setupSockets(io: Server) {
         socketData.nickname,
         data.mode
       );
+      socket.join(room.id);
       socket.emit('room:created', { room });
+      
+      const members = room.players.map((pid: string, index: number) => {
+        const p = getPlayerById(pid) as { id: string; nickname: string; avatar: string } | undefined;
+        return {
+          id: p?.id || pid,
+          nickname: p?.nickname || '未知玩家',
+          avatar: p?.avatar || '',
+          isHost: index === 0,
+        };
+      });
+      socket.emit('room:members', { members });
+      
       io.emit('rooms:update', gameEngine.getRooms());
     });
 
@@ -157,11 +170,24 @@ export function setupSockets(io: Server) {
 
       const room = gameEngine.joinRoom(data.roomId, socketData.playerId);
       if (room) {
+        socket.join(data.roomId);
         socket.emit('room:joined', { room });
+        
+        const members = room.players.map((pid: string, index: number) => {
+          const p = getPlayerById(pid) as { id: string; nickname: string; avatar: string } | undefined;
+          return {
+            id: p?.id || pid,
+            nickname: p?.nickname || '未知玩家',
+            avatar: p?.avatar || '',
+            isHost: index === 0,
+          };
+        });
+        
         io.to(data.roomId).emit('room:playerJoined', {
           playerId: socketData.playerId,
           nickname: socketData.nickname,
         });
+        io.to(data.roomId).emit('room:members', { members });
         io.emit('rooms:update', gameEngine.getRooms());
       } else {
         socket.emit('room:error', { message: '加入房间失败' });
@@ -175,7 +201,22 @@ export function setupSockets(io: Server) {
       const roomId = gameEngine.getPlayerRoomId(socketData.playerId);
       gameEngine.leaveRoom(socketData.playerId);
       if (roomId) {
+        socket.leave(roomId);
         io.to(roomId).emit('room:playerLeft', { playerId: socketData.playerId });
+        
+        const room = gameEngine.getRoomById(roomId);
+        if (room) {
+          const members = room.players.map((pid: string, index: number) => {
+            const p = getPlayerById(pid) as { id: string; nickname: string; avatar: string } | undefined;
+            return {
+              id: p?.id || pid,
+              nickname: p?.nickname || '未知玩家',
+              avatar: p?.avatar || '',
+              isHost: index === 0,
+            };
+          });
+          io.to(roomId).emit('room:members', { members });
+        }
       }
       io.emit('rooms:update', gameEngine.getRooms());
     });
@@ -361,6 +402,7 @@ export function setupSockets(io: Server) {
       if (!socketData) return;
 
       const gameId = socketData.gameId;
+      const roomId = gameEngine.getPlayerRoomId(socketData.playerId);
       let teamId: string | null = null;
 
       if (gameId) {
@@ -390,6 +432,8 @@ export function setupSockets(io: Server) {
         if (gameId) {
           gameEngine.addChatMessage(gameId, msg);
           io.to(gameId).emit('chat:receive', msg);
+        } else if (roomId) {
+          io.to(roomId).emit('chat:receive', msg);
         }
       } else if (data.channel === 'team') {
         if (gameId && teamId) {

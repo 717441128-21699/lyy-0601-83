@@ -70,7 +70,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
   setSelectedItem: (item) => set({ selectedItem: item }),
   setInventory: (items) => set({ inventory: items }),
   addMessage: (msg) =>
-    set((state) => ({ messages: [...state.messages.slice(-100), msg] })),
+    set((state) => {
+      if (state.messages.some((m) => m.id === msg.id)) {
+        return state;
+      }
+      return { messages: [...state.messages.slice(-100), msg] };
+    }),
   clearMessages: () => set({ messages: [] }),
   setRooms: (rooms) => set({ rooms }),
   setIsMatching: (v) => set({ isMatching: v }),

@@ -24,6 +24,7 @@ export function Game() {
   const [hoveredCell, setHoveredCell] = useState<{ x: number; y: number } | null>(null);
   const [showChat, setShowChat] = useState(false);
   const [chatMessage, setChatMessage] = useState('');
+  const [chatActiveTab, setChatActiveTab] = useState<'room' | 'team'>('room');
   const [gameResult, setGameResult] = useState<any>(null);
   const [particles, setParticles] = useState<{ x: number; y: number; color: string; id: number }[]>([]);
   const [targetingMode, setTargetingMode] = useState<string | null>(null);
@@ -252,12 +253,12 @@ export function Game() {
 
   const sendChat = () => {
     if (!chatMessage.trim()) return;
-    emit('chat:send', { message: chatMessage, type: 'text', roomId: gameState?.id });
+    emit('chat:send', { message: chatMessage, type: 'text', channel: chatActiveTab });
     setChatMessage('');
   };
 
   const sendEmote = (emote: string) => {
-    emit('chat:send', { message: emote, type: 'emote', roomId: gameState?.id });
+    emit('chat:send', { message: emote, type: 'emote', channel: chatActiveTab });
   };
 
   const handleUseItem = (item: any) => {
@@ -692,6 +693,28 @@ export function Game() {
             </div>
 
             <div className="flex-1 max-w-md">
+              <div className="flex gap-1 mb-1">
+                <button
+                  onClick={() => setChatActiveTab('room')}
+                  className={`px-3 py-1 font-pixel text-xs border-2 transition-colors ${
+                    chatActiveTab === 'room'
+                      ? 'border-pixel-green bg-pixel-green/20 text-pixel-green'
+                      : 'border-pixel-blue/30 text-gray-500 hover:border-pixel-blue'
+                  }`}
+                >
+                  房间
+                </button>
+                <button
+                  onClick={() => setChatActiveTab('team')}
+                  className={`px-3 py-1 font-pixel text-xs border-2 transition-colors ${
+                    chatActiveTab === 'team'
+                      ? 'border-pixel-pink bg-pixel-pink/20 text-pixel-pink'
+                      : 'border-pixel-blue/30 text-gray-500 hover:border-pixel-blue'
+                  }`}
+                >
+                  队伍
+                </button>
+              </div>
               <div className="flex items-center gap-2">
                 <input
                   type="text"
